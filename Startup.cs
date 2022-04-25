@@ -6,8 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Serilog;
-using Serilog.Events;
-using Serilog.Sinks.SystemConsole.Themes;
 
 namespace Collector
 {
@@ -18,8 +16,9 @@ namespace Collector
             IConfiguration configuration = BuildHost(new ConfigurationBuilder());
             var configDataSection = configuration.GetSection("ConfigData");
 
-            var logFilePath = configDataSection.GetValue<string>("LogFilePath");
-            var logFileName = configDataSection.GetValue<string>("LogFileName");
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(configuration)
+                .CreateLogger();
             
             // initialize the host
             var host = Host.CreateDefaultBuilder(args)
@@ -33,24 +32,7 @@ namespace Collector
                     services.AddScoped<IInstantClient, InstantClient>();
                     services.AddScoped<IArchiver, Archiver>();
                 })
-                .UseSerilog(new LoggerConfiguration()
-                    .MinimumLevel.Debug()
-                    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-                    .MinimumLevel.Override("System", LogEventLevel.Warning)
-                    .Enrich.FromLogContext()
-                    .WriteTo.File(
-                        path: Path.Combine(logFilePath, $"{logFileName}.{DateTime.Now:yyyyMMdd_HHmm}.txt"),
-                        fileSizeLimitBytes:1_000_000,
-                        rollOnFileSizeLimit: true,
-                        shared: true,
-                        flushToDiskInterval: TimeSpan.FromDays(1)
-                    )
-                    .WriteTo
-                    .Console(
-                        outputTemplate: "[{TimeStamp:HH:mm:ss} {Level}] {SourceContext}{NewLine}{Message:lj}{Exception}{NewLine}",
-                        theme: AnsiConsoleTheme.Literate
-                    )
-                    .CreateLogger())
+                .UseSerilog(Log.Logger)
                 .Build();
 
             return host;
@@ -60,6 +42,7 @@ namespace Collector
         {
             return configurationBuilder.SetBasePath(Directory.GetCurrentDirectory())
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                //.AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development"}.json", optional: true)
                 .AddEnvironmentVariables()
                 .Build();
         }

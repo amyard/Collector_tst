@@ -6,7 +6,6 @@ namespace Collector
     {
         public bool Success { get; }
         public string Error { get; private set; }
-        public bool IsFailure => !Success;
 
         public Result(bool success, string error)
         {

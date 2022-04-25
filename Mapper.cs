@@ -2,17 +2,20 @@
 using System.Linq;
 using Collector.Models;
 using Collector.Models.Instant;
-using JobInfo = Collector.Models.JobInfo;
 
 namespace Collector
 {
     public class Mapper
     {
-        public static InstantPyCardExportData MapImportedDataToExport(InstantPayCardImportData importedEmployeeData)
+        public static InstantPyCardExportData MapImportedDataToExport(EmployeeData importedEmployeeData)
         {
-            var terminated = (importedEmployeeData.EmployeeInfo.Terminated.TerminatedDate != null &&
-                              Convert.ToDateTime(importedEmployeeData.EmployeeInfo.Terminated.TerminatedDate) <= DateTime.Now)
-                ? importedEmployeeData.EmployeeInfo.Terminated.TerminatedDate
+            bool terminatedDateSuccess = DateTime.TryParse(importedEmployeeData.EmployeeInfo.Terminated.TerminatedDate,
+                out DateTime terminatedDate);
+            
+            bool birthDateSuccess = DateTime.TryParse(importedEmployeeData.EmployeeInfo.BirthDate, out DateTime birthDate);
+
+            var terminated = (importedEmployeeData.EmployeeInfo.Terminated.IsTerminated && (terminatedDateSuccess && terminatedDate <= DateTime.Now))
+                ? terminatedDate.ToString("yyyy-MM-dd")
                 : importedEmployeeData.EmployeeInfo.Terminated.IsTerminated.ToString().ToLower();
 
             var job = importedEmployeeData.JobInfo.FirstOrDefault(j => j.IsDefault) ??
@@ -26,7 +29,7 @@ namespace Collector
                 {
                     FirstName = importedEmployeeData.EmployeeInfo.FirstName,
                     LastName = importedEmployeeData.EmployeeInfo.LastName,
-                    BirthDate = importedEmployeeData.EmployeeInfo.BirthDate,
+                    BirthDate = birthDateSuccess && birthDate <= DateTime.Now ? birthDate.ToString("yyyy-MM-dd") : null,
                     BlockInstantPay = importedEmployeeData.EmployeeInfo.BlockInstantPay,
                     PaidOnInstant = importedEmployeeData.EmployeeInfo.PaidInstant,
                     Terminated = terminated

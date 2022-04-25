@@ -1,13 +1,15 @@
 ﻿using System;
 using System.IO;
+using System.Text;
 using Collector.Models;
+using Collector.Models.FileInformation;
 using Serilog;
 
 namespace Collector
 {
     public interface IArchiver
     {
-        Result Archive(FileToSend customFileInfo);
+        Result Archive(PathChunk chunk);
     }
     
     public class Archiver: IArchiver
@@ -19,33 +21,38 @@ namespace Collector
             _archiveFolder = config.InstantPayCardArchiveFolder;
         }
         
-        public Result Archive(FileToSend customFileInfo)
+        public Result Archive(PathChunk chunk)
         {
-            var locId = customFileInfo.InstantPyCardExportData.ExternalLocationId;
-            var archivePathWithLocId = Path.Combine(_archiveFolder, locId);
-
-            if (!Directory.Exists(archivePathWithLocId))
-                Directory.CreateDirectory(archivePathWithLocId);
-
-            try
+            StringBuilder sb = new StringBuilder();
+            
+            chunk.FilePaths.ForEach(filePath =>
             {
-                var archiveFullPath = Path.Combine(_archiveFolder, locId, customFileInfo.FileName);
-                
-                File.Copy(customFileInfo.FilePath, archiveFullPath, true);
-                File.Delete(customFileInfo.FilePath);
-            }
-            catch (Exception e)
-            {
-                var errorByDataMoving = string.Join(" ", new string[]
+                var fileInfo = new FileInfo(filePath);
+                var archivePathWithLocId = Path.Combine(_archiveFolder, fileInfo.Directory.Name);
+
+                if (!Directory.Exists(archivePathWithLocId))
+                    Directory.CreateDirectory(archivePathWithLocId);
+
+                try
                 {
-                    $"Error by moving the file \"{customFileInfo.FilePath}\" to archive folder",
-                    $"Error message: {e.Message}"
-                });
+                    var archiveFullPath = Path.Combine(archivePathWithLocId, fileInfo.Name);
                 
-                Log.Error(errorByDataMoving);
-                return Result.Fail(errorByDataMoving);
-            }
-
+                    File.Copy(filePath, archiveFullPath, true);
+                    File.Delete(filePath);
+                    
+                    Log.Information($"File '{filePath}' was moved to archive folder.");
+                }
+                catch (Exception ex)
+                {
+                    var errorByDataMoving = $"Error by moving file '{filePath}' to archive folder.";
+                    Log.Error(ex, errorByDataMoving);
+                    sb.AppendLine(errorByDataMoving);
+                }
+            });
+            
+            if (sb.Length > 0)
+                return Result.Fail(sb.ToString());
+            
             return Result.Ok();
         }
     }

@@ -1,4 +1,4 @@
-﻿namespace Collector.Models
+﻿namespace Collector.Models.InstantClient
 {
     public class InstantPayCardResponseError
     {

@@ -18,11 +18,8 @@ namespace Collector
                 Body = body,
                 IsBodyHtml = false
             };
-
-            foreach (var emailAddress in toAddress)
-            {
-                mailMessage.To.Add(emailAddress);
-            }
+            
+            toAddress.ForEach(emailAddress => mailMessage.To.Add(emailAddress));
 
             return mailMessage;
         }
@@ -40,36 +37,27 @@ namespace Collector
         {
             string subject = "Unsuccessful transmission: Check the Log File.";
 
-            var mailMessage = CreateMailMessage(
-                subject,
-                sendErrorMessage,
-                emailFromAddress,
-                CreateEmailAddressList(notifyEmailAddress).ToList()
-            );
-
-            try
+            using (var mailMessage = CreateMailMessage(subject, sendErrorMessage, emailFromAddress,
+                CreateEmailAddressList(notifyEmailAddress)))
             {
-                SendMailMessage(mailMessage);
-                Log.Information($"Email: {subject} {mailMessage}");
-            }
-            catch (SmtpException ex)
-            {
-                Log.Error($"SmtpException has occurred: {ex.Message}");
-            }
-            finally
-            {
-                mailMessage.Dispose();
+                try
+                {
+                    SendMailMessage(mailMessage);
+                    Log.Information($"Email: {subject} {mailMessage}");
+                }
+                catch (SmtpException ex)
+                {
+                    Log.Error($"SmtpException has occurred: {ex.Message}");
+                }
             }
         }
 
-        private static IEnumerable<string> CreateEmailAddressList(string emailAddressList)
+        private static List<string> CreateEmailAddressList(string emailAddressList)
         {
-            var listEmailAddress = new List<string>();
-            listEmailAddress.AddRange(emailAddressList
-                                                .ToLower()
-                                                .Split(new[] {" "}, StringSplitOptions.RemoveEmptyEntries)
-                                                .Distinct());
-            return listEmailAddress;
+            return emailAddressList.ToLower()
+                .Split(" ", StringSplitOptions.RemoveEmptyEntries)
+                .Distinct()
+                .ToList();
         }
     }
 }

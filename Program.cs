@@ -1,9 +1,12 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Collector.Models;
+using Collector.Models.Instant;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
@@ -16,6 +19,7 @@ namespace Collector
         private static IInstantClient _instantClient;
         private static IArchiver _archiver;
         private static ConfigData _config;
+        private static ILogger _logger;
         
         static async Task Main(string[] args)
         {
@@ -25,6 +29,7 @@ namespace Collector
             _instantClient = host.Services.GetService<IInstantClient>();
             _archiver = host.Services.GetService<IArchiver>();
             _config = host.Services.GetService<ConfigData>();
+            _logger = host.Services.GetService<ILogger>();
 
             try
             {
@@ -41,27 +46,53 @@ namespace Collector
         {
             var initialiseResult = _collector.Initialise();
 
-            if (initialiseResult.IsFailure)
+            if (!initialiseResult.Success)
             {
                 _errors.Add(initialiseResult.Error);
             }
             else
             {
-                foreach (var filePath in _collector.FilePaths)
+                foreach (var chunk in _collector.Chunks)
                 {
-                    var fileInfo = _collector.Collect(filePath);
-                    var sendingResult = await _instantClient.SendAsync(fileInfo);
+                    bool moveToArchiveFolder = true;
+                    List<InstantPyCardExportData> instantPyCardExportData = _collector.Collect(chunk);
+                    
+                    // generate array of sub chunks if we have array with more than 10 mb data in sum
+                    int chunkSize = GetAmountOfChunks(chunk.ChunkSize, instantPyCardExportData.Count);
+                    IEnumerable<IEnumerable<InstantPyCardExportData>> subChunks = instantPyCardExportData.ChunkBy(chunkSize);
 
-                    if (sendingResult.IsFailure)
+                    foreach (var subChunk in subChunks)
                     {
-                        _errors.Add(sendingResult.Error);
-                        continue;
+                        string jsonData = _collector.ConvertInstantDataToString(subChunk);
+                        using (CancellationTokenSource ctx = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+
+                        try
+                        {
+                            var sendingResult = await _instantClient.SendAsync(jsonData, ctx.Token);
+
+                            if (!sendingResult.Success)
+                            {
+                                moveToArchiveFolder = false;
+                                _errors.Add(sendingResult.Error);
+                                continue;
+                            }
+                        }
+                        catch (OperationCanceledException ex)
+                        {
+                            moveToArchiveFolder = false;
+                            _errors.Add(ex.Message);
+                            _logger.Error(ex, ex.Message);
+                        }
                     }
 
-                    var archiveResult = _archiver.Archive(fileInfo);
-                    
-                    if(archiveResult.IsFailure)
-                        _errors.Add(archiveResult.Error);
+                    // because we combine files in one huge file, need to move all files after sending
+                    if (moveToArchiveFolder)
+                    {
+                        var archiveResult = _archiver.Archive(chunk);
+                        
+                        if(!archiveResult.Success)
+                            _errors.Add(archiveResult.Error);
+                    }
                 }
             }
             
@@ -72,6 +103,17 @@ namespace Collector
                     _config.NotifyEmailAddress);
                 Environment.Exit(-1);
             }
+        }
+
+        /// <summary>
+        /// Return the number on which need to split our chunks, so all files will be less then 10 MB
+        /// </summary>
+        /// <param name="chunkChunkSize">The size of all files in chunk</param>
+        /// <param name="count">The amount of entities</param>
+        /// <returns>The number on which need to split our chunls</returns>
+        private static int GetAmountOfChunks(long chunkSize, int count)
+        {
+            return (int)(count / ((int)(chunkSize / _config.FileSizeLimitInBytes) + 1)) +1;
         }
     }
 }
