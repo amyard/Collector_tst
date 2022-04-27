@@ -33,6 +33,11 @@ namespace Collector
 
             try
             {
+                _logger.Debug("_logger Debug");
+                _logger.Information("_logger Information");
+                _logger.Warning("_logger Warning");
+                _logger.Error("_logger Error");
+                
                 await StartAsync();
             }
             catch (Exception ex)
